@@ -35,15 +35,14 @@ public class ReportGenerator {
     }
 
     public void generateDailyReport() {
-        
-        int generatedAlerts = alertManager.getTotalAlertsGenerated();
-        int activeAlerts = alertManager.getTotalActiveAlerts();
-        int waterUsage = resourceMonitor.getTotalWaterUsage();
-        int energyUsage = resourceMonitor.getTotalEnergyUsage();
-
-        
+        // Lock order: report, then alert/resource; those services never acquire reportLock.
         reportLock.lock();
         try {
+            int generatedAlerts = alertManager.getTotalAlertsGenerated();
+            int activeAlerts = alertManager.getTotalActiveAlerts();
+            int waterUsage = resourceMonitor.getTotalWaterUsage();
+            int energyUsage = resourceMonitor.getTotalEnergyUsage();
+
             System.out.println("===== DAILY REPORT =====");
             System.out.println("Generated Alerts: " + generatedAlerts);
             System.out.println("Active Alerts: " + activeAlerts);
@@ -56,12 +55,9 @@ public class ReportGenerator {
     }
 
     public void archiveAlerts() {
-        
-        int archivedCount = alertManager.archiveActiveAlerts();
-
-       
         reportLock.lock();
         try {
+            int archivedCount = alertManager.archiveActiveAlerts();
             if (archivedCount > 0) {
                 reports.add("Archived " + archivedCount + " alerts");
                 System.out.println("Archiving alerts... " + archivedCount + " moved to archive.");

@@ -11,8 +11,11 @@ import org.example.service.ChamberManager;
 import org.example.service.EventLogger;
 import org.example.service.ReportGenerator;
 import org.example.service.ResourceMonitor;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 
@@ -97,16 +100,27 @@ public class SVFRMS {
         activateControlThread.start();
 
         ExecutorService chamberPool = Executors.newFixedThreadPool(CHAMBER_THREAD_POOL_SIZE);
-        chamberPool.submit(new ChamberSensorTask("CH1", "Tomato", sensorService, resourceMonitor));
-        chamberPool.submit(new ChamberSensorTask("CH2", "Strawberry", sensorService, resourceMonitor));
-        chamberPool.submit(new ChamberSensorTask("CH3", "Lettuce", sensorService, resourceMonitor));
-        chamberPool.submit(new ChamberSensorTask("CH4", "Chili", sensorService, resourceMonitor));
+        try {
+            List<Future<?>> tasks = List.of(
+                    chamberPool.submit(new ChamberSensorTask("CH1", "Tomato", sensorService, resourceMonitor)),
+                    chamberPool.submit(new ChamberSensorTask("CH2", "Strawberry", sensorService, resourceMonitor)),
+                    chamberPool.submit(new ChamberSensorTask("CH3", "Lettuce", sensorService, resourceMonitor)),
+                    chamberPool.submit(new ChamberSensorTask("CH4", "Chili", sensorService, resourceMonitor)));
 
-        chamberPool.shutdown();
-        chamberPool.awaitTermination(1, TimeUnit.MINUTES);
-
-        controlService.setRunning(false);
-        activateControlThread.join();
+            chamberPool.shutdown();
+            if (!chamberPool.awaitTermination(1, TimeUnit.MINUTES)) {
+                throw new IllegalStateException("Sensor tasks did not finish within one minute");
+            }
+            for (Future<?> task : tasks) {
+                task.get();
+            }
+        } catch (ExecutionException e) {
+            throw new IllegalStateException("Sensor task failed", e.getCause());
+        } finally {
+            chamberPool.shutdownNow();
+            controlService.setRunning(false);
+            activateControlThread.join();
+        }
 
         Thread genReport = new Thread(this::generateDailyReport, "Report-Thread");
         Thread archiveAlerts = new Thread(this::archiveAlerts, "Archive-Thread");
